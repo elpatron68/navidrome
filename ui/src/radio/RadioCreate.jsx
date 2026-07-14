@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import {
   Create,
   required,
@@ -8,8 +7,6 @@ import {
 } from 'react-admin'
 import { Title } from '../common'
 import { urlValidate } from '../utils/validations'
-import { httpClient } from '../dataProvider'
-import { REST_URL } from '../consts'
 import RadioBrowserSearch from './RadioBrowserSearch'
 
 const RadioTitle = () => {
@@ -24,33 +21,10 @@ const RadioTitle = () => {
 }
 
 const RadioCreate = (props) => {
-  const pendingFaviconRef = useRef('')
-
-  const onSuccess = async (data) => {
-    const faviconUrl = pendingFaviconRef.current
-    pendingFaviconRef.current = ''
-    if (!faviconUrl || !data?.id) {
-      return
-    }
-    try {
-      await httpClient(`${REST_URL}/radio/${data.id}/image/url`, {
-        method: 'POST',
-        body: JSON.stringify({ url: faviconUrl }),
-        headers: new Headers({ 'Content-Type': 'application/json' }),
-      })
-    } catch (_e) {
-      // Logo import is best-effort; station was created successfully
-    }
-  }
-
   return (
-    <Create title={<RadioTitle />} {...props} onSuccess={onSuccess}>
+    <Create title={<RadioTitle />} {...props}>
       <SimpleForm redirect="list" variant={'outlined'}>
-        <RadioBrowserSearch
-          onFaviconSelected={(url) => {
-            pendingFaviconRef.current = url
-          }}
-        />
+        <RadioBrowserSearch />
         <TextInput source="name" validate={[required()]} />
         <TextInput
           type="url"

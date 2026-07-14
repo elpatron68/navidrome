@@ -18,7 +18,7 @@ import { REST_URL } from '../consts'
 
 const listStyle = { maxHeight: 280, overflow: 'auto', marginTop: 8 }
 
-const RadioBrowserSearchFields = ({ form, onFaviconSelected }) => {
+const RadioBrowserSearchFields = ({ form }) => {
   const translate = useTranslate()
   const notify = useNotify()
   const [query, setQuery] = useState('')
@@ -60,9 +60,9 @@ const RadioBrowserSearchFields = ({ form, onFaviconSelected }) => {
       form.change('name', station.name)
       form.change('streamUrl', station.streamUrl)
       form.change('homePageUrl', station.homePageUrl || '')
-      onFaviconSelected?.(station.faviconUrl || '')
+      form.change('faviconUrl', station.faviconUrl || '')
     },
-    [form, onFaviconSelected],
+    [form],
   )
 
   return (
@@ -130,14 +130,9 @@ const RadioBrowserSearchFields = ({ form, onFaviconSelected }) => {
   )
 }
 
-const RadioBrowserSearch = ({ onFaviconSelected }) => (
+const RadioBrowserSearch = () => (
   <FormSpy subscription={{}}>
-    {({ form }) => (
-      <RadioBrowserSearchFields
-        form={form}
-        onFaviconSelected={onFaviconSelected}
-      />
-    )}
+    {({ form }) => <RadioBrowserSearchFields form={form} />}
   </FormSpy>
 )
 

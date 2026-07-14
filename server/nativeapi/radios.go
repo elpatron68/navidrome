@@ -1,13 +1,11 @@
 package nativeapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"time"
@@ -68,67 +66,53 @@ type radioCreateRequest struct {
 }
 
 func (api *Router) createRadio(constructor func(ctx context.Context) rest.Repository) http.HandlerFunc {
-	standardPost := rest.Post(constructor)
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "invalid body", http.StatusBadRequest)
-			return
-		}
-
 		var req radioCreateRequest
-		if err := json.Unmarshal(body, &req); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return
 		}
 
-		radioBody, err := json.Marshal(&model.Radio{
+		repo := constructor(ctx)
+		persistable, ok := repo.(rest.Persistable)
+		if !ok {
+			http.Error(w, "405 Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		radio := &model.Radio{
 			Name:        req.Name,
 			StreamUrl:   req.StreamUrl,
 			HomePageUrl: req.HomePageUrl,
-		})
+		}
+		id, err := persistable.Save(radio)
 		if err != nil {
+			if errors.Is(err, rest.ErrPermissionDenied) {
+				http.Error(w, "Saving radio: Permission denied", http.StatusForbidden)
+				return
+			}
+			var validationErr *rest.ValidationError
+			if errors.As(err, &validationErr) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(validationErr)
+				return
+			}
+			log.Error(ctx, "Error creating radio", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		postReq := r.Clone(ctx)
-		postReq.Body = io.NopCloser(bytes.NewReader(radioBody))
-		postReq.ContentLength = int64(len(radioBody))
-		rec := httptest.NewRecorder()
-		standardPost(rec, postReq)
-		for key, values := range rec.Header() {
-			for _, value := range values {
-				w.Header().Add(key, value)
+		if faviconURL := strings.TrimSpace(req.FaviconURL); faviconURL != "" {
+			if err := api.saveRadioImageFromURL(ctx, radio, faviconURL); err != nil {
+				log.Warn(ctx, "Could not import radio favicon on create", "radio", id, "url", faviconURL, err)
 			}
 		}
-		w.WriteHeader(rec.Code)
-		_, _ = io.Copy(w, rec.Body)
-		if rec.Code != http.StatusOK {
-			return
-		}
 
-		var resp struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || resp.ID == "" {
-			return
-		}
-
-		faviconURL := strings.TrimSpace(req.FaviconURL)
-		if faviconURL == "" {
-			return
-		}
-
-		radio, err := api.ds.Radio(ctx).Get(resp.ID)
-		if err != nil {
-			log.Warn(ctx, "Could not load radio for favicon import", "radio", resp.ID, err)
-			return
-		}
-		if err := api.saveRadioImageFromURL(ctx, radio, faviconURL); err != nil {
-			log.Warn(ctx, "Could not import radio favicon on create", "radio", resp.ID, "url", faviconURL, err)
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 	}
 }
 

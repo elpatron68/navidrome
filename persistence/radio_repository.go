@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	. "github.com/Masterminds/squirrel"
@@ -72,7 +73,7 @@ func (r *radioRepository) Put(radio *model.Radio, colsToUpdate ...string) error 
 		colsToUpdate = append(colsToUpdate, "UpdatedAt")
 	}
 	_, err := r.put(radio.ID, radio, colsToUpdate...)
-	return err
+	return mapRadioError(err)
 }
 
 func (r *radioRepository) Count(options ...rest.QueryOptions) (int64, error) {
@@ -101,10 +102,7 @@ func (r *radioRepository) Save(entity any) (string, error) {
 		return "", rest.ErrPermissionDenied
 	}
 	err := r.Put(t)
-	if errors.Is(err, model.ErrNotFound) {
-		return "", rest.ErrNotFound
-	}
-	return t.ID, err
+	return t.ID, mapRadioError(err)
 }
 
 func (r *radioRepository) Update(id string, entity any, cols ...string) error {
@@ -114,8 +112,19 @@ func (r *radioRepository) Update(id string, entity any, cols ...string) error {
 		return rest.ErrPermissionDenied
 	}
 	err := r.Put(t)
+	return mapRadioError(err)
+}
+
+func mapRadioError(err error) error {
+	if err == nil {
+		return nil
+	}
 	if errors.Is(err, model.ErrNotFound) {
 		return rest.ErrNotFound
+	}
+	errStr := err.Error()
+	if strings.Contains(errStr, "UNIQUE constraint failed") && strings.Contains(errStr, "radio.name") {
+		return &rest.ValidationError{Errors: map[string]string{"name": "ra.validation.unique"}}
 	}
 	return err
 }

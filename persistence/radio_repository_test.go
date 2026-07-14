@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"errors"
 
 	"github.com/deluan/rest"
 	"github.com/navidrome/navidrome/log"
@@ -106,6 +107,17 @@ var _ = Describe("RadioRepository", func() {
 				all, err := repo.GetAll()
 				Expect(err).To(BeNil())
 				Expect(all[2].StreamUrl).To(Equal("https://example.com:4533/app"))
+			})
+
+			It("returns validation error for duplicate name", func() {
+				err := repo.Put(&model.Radio{
+					Name:      radioWithHomePage.Name,
+					StreamUrl: "https://example.com/other",
+				})
+
+				var validationErr *rest.ValidationError
+				Expect(errors.As(err, &validationErr)).To(BeTrue())
+				Expect(validationErr.Errors["name"]).To(Equal("ra.validation.unique"))
 			})
 		})
 	})

@@ -155,8 +155,9 @@ COPY --from=build /out /
 ########################################################################################################################
 ### Build Final Image
 FROM public.ecr.aws/docker/library/alpine:3.20 AS final
-LABEL maintainer="deluan@navidrome.org"
-LABEL org.opencontainers.image.source="https://github.com/navidrome/navidrome"
+LABEL maintainer="elpatron68"
+LABEL org.opencontainers.image.source="https://github.com/elpatron68/navidrome"
+LABEL org.opencontainers.image.description="Navidrome fork with Radio Browser search and custom extensions"
 
 # Install runtime dependencies
 # - libwebp + symlinks: enables native WebP encoding via purego/dlopen

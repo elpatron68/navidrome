@@ -1,0 +1,140 @@
+name: Sync upstream Navidrome
+
+on:
+  schedule:
+    # Daily at 06:00 UTC – picks up new upstream releases quickly
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Merge even if already up to date"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+env:
+  UPSTREAM_REPO: navidrome/navidrome
+  SYNC_BRANCH: master
+
+jobs:
+  sync:
+    name: Merge upstream into fork
+    runs-on: ubuntu-latest
+    # Only run on the fork – never on upstream itself
+    if: github.repository_owner != 'navidrome'
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ env.SYNC_BRANCH }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git" || true
+          git fetch upstream --tags --prune
+
+      - name: Detect upstream state
+        id: state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/master)
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+
+          UPSTREAM_TAG=$(git describe --tags --abbrev=0 upstream/master 2>/dev/null || true)
+          echo "upstream_tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+
+          LATEST_RELEASE=$(gh api "repos/${UPSTREAM_REPO}/releases/latest" --jq '.tag_name' 2>/dev/null || true)
+          echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+
+          echo "Fork is $BEHIND commit(s) behind upstream/master"
+          echo "Upstream master tag: ${UPSTREAM_TAG:-none}"
+          echo "Latest upstream release: ${LATEST_RELEASE:-none}"
+
+      - name: Skip – already up to date
+        if: >-
+          steps.state.outputs.behind == '0' &&
+          (github.event_name != 'workflow_dispatch' || inputs.force != true)
+        run: echo "Nothing to sync."
+
+      - name: Merge upstream/master
+        if: >-
+          steps.state.outputs.behind != '0' ||
+          (github.event_name == 'workflow_dispatch' && inputs.force == true)
+        id: merge
+        run: |
+          set +e
+          git merge upstream/master \
+            -m "chore: sync upstream ${UPSTREAM_REPO}@${{ steps.state.outputs.latest_release || steps.state.outputs.upstream_tag }}"
+
+          MERGE_EXIT=$?
+          if [ $MERGE_EXIT -ne 0 ]; then
+            echo "merge_failed=true" >> $GITHUB_OUTPUT
+            git merge --abort 2>/dev/null || true
+            exit 0
+          fi
+
+          echo "merge_failed=false" >> $GITHUB_OUTPUT
+
+      - name: Push synced master
+        if: steps.merge.outputs.merge_failed == 'false'
+        run: git push origin "${SYNC_BRANCH}"
+
+      - name: Create issue on merge conflict
+        if: steps.merge.outputs.merge_failed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_TAG: ${{ steps.state.outputs.latest_release || steps.state.outputs.upstream_tag }}
+          BEHIND: ${{ steps.state.outputs.behind }}
+        run: |
+          TITLE="Upstream sync failed – manual merge required (${UPSTREAM_TAG})"
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "Open issue #$EXISTING already exists."
+            exit 0
+          fi
+
+          BODY="## Upstream sync failed
+
+          The automated upstream merge encountered conflicts and was aborted.
+
+          ### Manual resolution
+
+          \`\`\`bash
+          git fetch upstream
+          git checkout master
+          git merge upstream/master
+          # resolve conflicts, then:
+          git push origin master
+          \`\`\`
+
+          ### Context
+
+          - Upstream: https://github.com/navidrome/navidrome
+          - Latest release: ${UPSTREAM_TAG}
+          - Commits behind: ${BEHIND}"
+
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$TITLE" \
+            --body "$BODY"
+
+      - name: Trigger build pipeline
+        if: steps.merge.outputs.merge_failed == 'false' && steps.state.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run pipeline.yml --repo "${{ github.repository }}" --ref "${SYNC_BRANCH}"
+          echo "Build pipeline triggered for synced master."

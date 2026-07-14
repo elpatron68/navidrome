@@ -271,10 +271,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       is_enabled: ${{ steps.check.outputs.is_enabled }}
+      is_fork: ${{ steps.check.outputs.is_fork }}
     steps:
-      - name: Check if Docker push is configured
+      - name: Check if container push is enabled
         id: check
-        run: echo "is_enabled=${{ secrets.DOCKER_HUB_USERNAME != '' }}" >> $GITHUB_OUTPUT
+        run: |
+          IS_FORK=false
+          if [ "${{ github.repository_owner }}" != "navidrome" ]; then
+            IS_FORK=true
+          fi
+          echo "is_fork=$IS_FORK" >> $GITHUB_OUTPUT
+
+          # Push container images on direct pushes (not PRs).
+          # Forks publish to GHCR without Docker Hub credentials.
+          # Upstream requires Docker Hub credentials (unchanged behaviour).
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "is_enabled=false" >> $GITHUB_OUTPUT
+          elif [ "$IS_FORK" = "true" ]; then
+            echo "is_enabled=true" >> $GITHUB_OUTPUT
+          elif [ -n "${{ secrets.DOCKER_HUB_USERNAME }}" ]; then
+            echo "is_enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_enabled=false" >> $GITHUB_OUTPUT
+          fi
 
   build:
     name: Build

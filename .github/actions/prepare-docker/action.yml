@@ -75,11 +75,14 @@ runs:
       with:
         github-token: ${{ inputs.github_token }}
         labels: |
-          maintainer=deluan@navidrome.org
+          maintainer=${{ github.repository_owner == 'navidrome' && 'deluan@navidrome.org' || github.repository_owner }}
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
         images: |
           name=${{env.DOCKER_HUB_REPO}},enable=${{env.DOCKER_HUB_ENABLED}}
           name=ghcr.io/${{ github.repository }}
         tags: |
           type=ref,event=pr
           type=semver,pattern={{version}}
+          type=semver,pattern={{version}},suffix=-fork,enable=${{ github.repository_owner != 'navidrome' }}
           type=raw,value=develop,enable={{is_default_branch}}
+          type=raw,value=latest,enable=${{ github.repository_owner != 'navidrome' && github.ref == 'refs/heads/master' }}

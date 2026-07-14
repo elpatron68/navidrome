@@ -9,7 +9,7 @@ import (
 
 func TestNormalizeStations(t *testing.T) {
 	raw := []apiStation{
-		{Name: "A", URLResolved: "https://a.example/stream", Homepage: "https://a.example", StationUUID: "1"},
+		{Name: "A", URLResolved: "https://a.example/stream", Homepage: "https://a.example", StationUUID: "1", Favicon: "https://a.example/icon.png"},
 		{Name: "B", URL: "http://b-only", StationUUID: "2"},
 		{Name: "skip", StationUUID: "3"},
 	}
@@ -19,6 +19,9 @@ func TestNormalizeStations(t *testing.T) {
 	}
 	if got[0].StreamURL != "https://a.example/stream" || got[0].HomePageURL != "https://a.example" {
 		t.Fatalf("first: %+v", got[0])
+	}
+	if got[0].FaviconURL != "https://a.example/icon.png" {
+		t.Fatalf("first favicon: %q", got[0].FaviconURL)
 	}
 	if got[1].StreamURL != "http://b-only" {
 		t.Fatalf("second stream: %q", got[1].StreamURL)

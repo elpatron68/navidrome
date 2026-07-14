@@ -30,6 +30,7 @@ type Station struct {
 	Name        string `json:"name"`
 	StreamURL   string `json:"streamUrl"`
 	HomePageURL string `json:"homePageUrl"`
+	FaviconURL  string `json:"faviconUrl,omitempty"`
 }
 
 type apiStation struct {
@@ -38,6 +39,7 @@ type apiStation struct {
 	URLResolved string `json:"url_resolved"`
 	Homepage    string `json:"homepage"`
 	StationUUID string `json:"stationuuid"`
+	Favicon     string `json:"favicon"`
 }
 
 // Sentinel errors for query validation. Use errors.Is to detect them.
@@ -137,6 +139,7 @@ func normalizeStations(raw []apiStation) []Station {
 			Name:        strings.TrimSpace(s.Name),
 			StreamURL:   stream,
 			HomePageURL: strings.TrimSpace(s.Homepage),
+			FaviconURL:  strings.TrimSpace(s.Favicon),
 		})
 	}
 	return out

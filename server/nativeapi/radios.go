@@ -33,6 +33,7 @@ func (api *Router) addRadioRoute(r chi.Router) {
 			r.Put("/", rest.Put(constructor))
 			r.Delete("/", rest.Delete(constructor))
 			r.Post("/image", api.uploadRadioImage())
+			r.Post("/image/url", api.uploadRadioImageFromURL())
 			r.Delete("/image", api.deleteRadioImage())
 		})
 	})
@@ -40,6 +41,26 @@ func (api *Router) addRadioRoute(r chi.Router) {
 
 func (api *Router) uploadRadioImage() http.HandlerFunc {
 	return handleImageUpload(func(ctx context.Context, reader io.Reader, ext string) error {
+		radioID := chi.URLParamFromCtx(ctx, "id")
+		radio, err := api.ds.Radio(ctx).Get(radioID)
+		if err != nil {
+			if errors.Is(err, model.ErrNotFound) {
+				return model.ErrNotFound
+			}
+			return err
+		}
+		oldPath := radio.UploadedImagePath()
+		filename, err := api.imgUpload.SetImage(ctx, consts.EntityRadio, radio.ID, radio.Name, oldPath, reader, ext)
+		if err != nil {
+			return err
+		}
+		radio.UploadedImage = filename
+		return api.ds.Radio(ctx).Put(radio, "UploadedImage")
+	})
+}
+
+func (api *Router) uploadRadioImageFromURL() http.HandlerFunc {
+	return handleImageUploadFromURL(func(ctx context.Context, reader io.Reader, ext string) error {
 		radioID := chi.URLParamFromCtx(ctx, "id")
 		radio, err := api.ds.Radio(ctx).Get(radioID)
 		if err != nil {

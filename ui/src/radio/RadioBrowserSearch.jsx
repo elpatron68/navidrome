@@ -1,10 +1,12 @@
 import React, { useCallback, useState } from 'react'
 import {
+  Avatar,
   Box,
   Button,
   CircularProgress,
   List,
   ListItem,
+  ListItemAvatar,
   ListItemText,
   TextField,
   Typography,
@@ -16,7 +18,7 @@ import { REST_URL } from '../consts'
 
 const listStyle = { maxHeight: 280, overflow: 'auto', marginTop: 8 }
 
-const RadioBrowserSearchFields = ({ form }) => {
+const RadioBrowserSearchFields = ({ form, onFaviconSelected }) => {
   const translate = useTranslate()
   const notify = useNotify()
   const [query, setQuery] = useState('')
@@ -58,8 +60,9 @@ const RadioBrowserSearchFields = ({ form }) => {
       form.change('name', station.name)
       form.change('streamUrl', station.streamUrl)
       form.change('homePageUrl', station.homePageUrl || '')
+      onFaviconSelected?.(station.faviconUrl || '')
     },
-    [form],
+    [form, onFaviconSelected],
   )
 
   return (
@@ -113,6 +116,11 @@ const RadioBrowserSearchFields = ({ form }) => {
               button
               onClick={() => pickStation(s)}
             >
+              {s.faviconUrl ? (
+                <ListItemAvatar>
+                  <Avatar alt="" src={s.faviconUrl} />
+                </ListItemAvatar>
+              ) : null}
               <ListItemText primary={s.name} secondary={s.streamUrl} />
             </ListItem>
           ))}
@@ -122,9 +130,14 @@ const RadioBrowserSearchFields = ({ form }) => {
   )
 }
 
-const RadioBrowserSearch = () => (
+const RadioBrowserSearch = ({ onFaviconSelected }) => (
   <FormSpy subscription={{}}>
-    {({ form }) => <RadioBrowserSearchFields form={form} />}
+    {({ form }) => (
+      <RadioBrowserSearchFields
+        form={form}
+        onFaviconSelected={onFaviconSelected}
+      />
+    )}
   </FormSpy>
 )
 

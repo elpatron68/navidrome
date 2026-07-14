@@ -200,6 +200,14 @@ func downloadImageFromURL(ctx context.Context, rawURL string) (io.Reader, string
 
 	_, format, err := image.DecodeConfig(bytes.NewReader(body))
 	if err != nil {
+		if isICO(body) || strings.HasSuffix(strings.ToLower(u.Path), ".ico") ||
+			strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "icon") {
+			reader, icoErr := decodeICOToPNG(body)
+			if icoErr != nil {
+				return nil, "", fmt.Errorf("invalid ICO file: %w", icoErr)
+			}
+			return reader, ".png", nil
+		}
 		return nil, "", fmt.Errorf("invalid image file")
 	}
 	ext := "." + format

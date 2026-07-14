@@ -90,7 +90,9 @@ jobs:
 
       - name: Push synced master
         if: steps.merge.outputs.merge_failed == 'false'
-        run: git push origin "${SYNC_BRANCH}"
+        run: |
+          git push origin "${SYNC_BRANCH}"
+          git push origin --tags
 
       - name: Create issue on merge conflict
         if: steps.merge.outputs.merge_failed == 'true'

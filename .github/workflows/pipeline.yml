@@ -303,6 +303,7 @@ jobs:
     permissions:
       contents: read
       actions: write
+      packages: write
     strategy:
       max-parallel: 4
       matrix:

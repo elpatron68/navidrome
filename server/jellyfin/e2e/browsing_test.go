@@ -118,6 +118,28 @@ var _ = Describe("Browsing", func() {
 		})
 	})
 
+	// Finamp's download sync asks a library for the tracks outside any album this way; answering
+	// with every track would stream the whole library.
+	Describe("Recursive=false", func() {
+		lib1 := enc("1")
+
+		It("returns no songs for a library parent", func() {
+			q := queryResult(get("/Items?IncludeItemTypes=Audio&ParentId=" + lib1 + "&Recursive=false"))
+			Expect(q.Items).To(BeEmpty())
+			Expect(q.TotalRecordCount).To(BeZero())
+		})
+
+		It("still lists the library's albums", func() {
+			q := queryResult(get("/Items?IncludeItemTypes=MusicAlbum&ParentId=" + lib1 + "&Recursive=false"))
+			Expect(names(q.Items)).To(ConsistOf("Abbey Road", "Help!", "IV", "Kind of Blue", "Singles"))
+		})
+
+		It("still lists an album's tracks", func() {
+			q := queryResult(get("/Items?IncludeItemTypes=Audio&ParentId=" + enc(albumID("Abbey Road")) + "&Recursive=false"))
+			Expect(names(q.Items)).To(ConsistOf("Come Together", "Something"))
+		})
+	})
+
 	// Finamp's artist screen sends ParentId=<libraryId> (scoping) plus AlbumArtistIds/ArtistIds
 	// for the actual artist filter, not ParentId=<artistId>.
 	Describe("artist filtering (AlbumArtistIds / ArtistIds)", func() {
@@ -154,6 +176,27 @@ var _ = Describe("Browsing", func() {
 			q := queryResult(get("/Items?IncludeItemTypes=MusicAlbum&Recursive=true&contributingArtistIds=" + enc(artistID("The Beatles"))))
 			Expect(names(q.Items)).ToNot(ContainElement("Abbey Road"))
 			Expect(names(q.Items)).ToNot(ContainElement("Help!"))
+		})
+	})
+
+	// Feishin fetches an album's tracks with AlbumIds=<albumId>&IncludeItemTypes=Audio&Recursive=true.
+	Describe("album filtering (AlbumIds)", func() {
+		It("filters songs by AlbumIds", func() {
+			q := queryResult(get("/Items?IncludeItemTypes=Audio&Recursive=true&AlbumIds=" + enc(albumID("Abbey Road"))))
+			Expect(names(q.Items)).To(ConsistOf("Come Together", "Something"))
+			Expect(q.TotalRecordCount).To(Equal(2))
+		})
+
+		It("matches any of multiple comma-separated AlbumIds", func() {
+			q := queryResult(get("/Items?IncludeItemTypes=Audio&Recursive=true&AlbumIds=" + enc(albumID("Abbey Road")) + "," + enc(albumID("IV"))))
+			Expect(names(q.Items)).To(ConsistOf("Come Together", "Something", "Stairway To Heaven"))
+			Expect(q.TotalRecordCount).To(Equal(3))
+		})
+
+		It("returns nothing for an unknown album id", func() {
+			q := queryResult(get("/Items?IncludeItemTypes=Audio&Recursive=true&AlbumIds=" + enc("no-such-album")))
+			Expect(q.Items).To(BeEmpty())
+			Expect(q.TotalRecordCount).To(Equal(0))
 		})
 	})
 
@@ -299,6 +342,34 @@ var _ = Describe("Browsing", func() {
 		It("merges multiple types into one paginated result", func() {
 			q := queryResult(get("/Items?IncludeItemTypes=MusicAlbum,Audio&Recursive=true"))
 			Expect(q.TotalRecordCount).To(Equal(12)) // 5 albums + 7 songs
+		})
+
+		// Chaining the per-type cursors must preserve the merged order.
+		It("streams an unbounded multi-type merge, honoring StartIndex", func() {
+			all := queryResult(get("/Items?IncludeItemTypes=MusicAlbum,Audio&Recursive=true"))
+			Expect(all.Items).To(HaveLen(12))
+
+			skipped := queryResult(get("/Items?IncludeItemTypes=MusicAlbum,Audio&Recursive=true&StartIndex=2"))
+			Expect(skipped.Items).To(HaveLen(10))
+			Expect(skipped.TotalRecordCount).To(Equal(12))
+			Expect(skipped.StartIndex).To(Equal(2))
+			Expect(names(skipped.Items)).To(Equal(names(all.Items)[2:]))
+		})
+
+		// Paging must ride on the cursor query's LIMIT/OFFSET, not be applied after materializing.
+		It("pages songs via StartIndex/Limit while reporting the full total", func() {
+			all := queryResult(get("/Items?IncludeItemTypes=Audio&Recursive=true&SortBy=SortName"))
+			Expect(all.TotalRecordCount).To(Equal(7))
+			Expect(all.Items).To(HaveLen(7))
+
+			p1 := queryResult(get("/Items?IncludeItemTypes=Audio&Recursive=true&SortBy=SortName&Limit=3&StartIndex=0"))
+			p2 := queryResult(get("/Items?IncludeItemTypes=Audio&Recursive=true&SortBy=SortName&Limit=3&StartIndex=3"))
+			Expect(p1.Items).To(HaveLen(3))
+			Expect(p2.Items).To(HaveLen(3))
+			Expect(p1.TotalRecordCount).To(Equal(7))
+			// The two pages are distinct and match the head of the unpaged, identically-sorted list.
+			Expect(names(p1.Items)).ToNot(ContainElement(BeElementOf(names(p2.Items))))
+			Expect(append(names(p1.Items), names(p2.Items)...)).To(Equal(names(all.Items)[:6]))
 		})
 	})
 

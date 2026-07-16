@@ -4,7 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
+	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/core/auth"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -250,5 +254,129 @@ var _ = Describe("normalizeQueryKeys", func() {
 		var got []string
 		invoke(func(_ http.ResponseWriter, r *http.Request) { got = r.URL.Query()["ids"] }, httptest.NewRecorder(), r)
 		Expect(got).To(ConsistOf("aaa", "bbb"))
+	})
+})
+
+var _ = Describe("throttleStreams", func() {
+	// serve fires n concurrent requests through the middleware and reports the highest number that
+	// were ever inside the handler at once.
+	serve := func(limit, n int) int32 {
+		var inFlight, peak int32
+		release := make(chan struct{})
+		h := throttleStreams(limit)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cur := atomic.AddInt32(&inFlight, 1)
+			for {
+				old := atomic.LoadInt32(&peak)
+				if cur <= old || atomic.CompareAndSwapInt32(&peak, old, cur) {
+					break
+				}
+			}
+			<-release // hold the slot until every request has had a chance to enter
+			atomic.AddInt32(&inFlight, -1)
+		}))
+
+		var wg sync.WaitGroup
+		for range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/Items", nil))
+			}()
+		}
+		// Give the admitted requests time to pile up before letting them finish.
+		time.Sleep(100 * time.Millisecond)
+		close(release)
+		wg.Wait()
+		return atomic.LoadInt32(&peak)
+	}
+
+	It("admits no more than the limit at once", func() {
+		Expect(serve(2, 8)).To(Equal(int32(2)))
+	})
+
+	It("queues the excess rather than rejecting it", func() {
+		// All 8 still complete — they wait for a slot instead of getting a 429.
+		var served int32
+		release := make(chan struct{})
+		h := throttleStreams(2)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-release
+			atomic.AddInt32(&served, 1)
+		}))
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/Items", nil))
+			}()
+		}
+		close(release)
+		wg.Wait()
+		Expect(served).To(Equal(int32(8)))
+	})
+
+	// chi's ThrottleBacklog panics on a non-positive limit, so a user disabling the cap must not
+	// crash the server at startup.
+	It("is disabled, not panicking, when the limit is zero", func() {
+		Expect(func() { serve(0, 4) }).ToNot(Panic())
+		Expect(serve(0, 4)).To(BeNumerically(">", int32(1)))
+	})
+})
+
+var _ = Describe("caseInsensitivePaths", func() {
+	var handler http.Handler
+	var gotID, gotContainer string
+
+	BeforeEach(func() {
+		gotID, gotContainer = "", ""
+		r := chi.NewRouter()
+		// Routes are registered lowercase, mirroring the real router.
+		r.Get("/foo/{id}/bar", func(w http.ResponseWriter, req *http.Request) {
+			gotID = chi.URLParam(req, "id")
+			w.WriteHeader(http.StatusOK)
+		})
+		r.Get("/audio/{id}/stream.{container}", func(w http.ResponseWriter, req *http.Request) {
+			gotContainer = chi.URLParam(req, "container")
+			w.WriteHeader(http.StatusOK)
+		})
+		// A second route reusing the "bar" segment name at a different position.
+		r.Get("/bar/{id}", func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		handler = caseInsensitivePaths(r)
+	})
+
+	serve := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w
+	}
+
+	It("routes a mixed-case request to its lowercase-registered route", func() {
+		Expect(serve("/FOO/abc/BAR").Code).To(Equal(http.StatusOK))
+	})
+
+	It("routes both routes that share a segment name, regardless of casing", func() {
+		Expect(serve("/Foo/abc/Bar").Code).To(Equal(http.StatusOK))
+		Expect(serve("/BAR/abc").Code).To(Equal(http.StatusOK))
+	})
+
+	It("lowercases the mixed literal.extension segment so the route and container match", func() {
+		w := serve("/Audio/abc/STREAM.MP3")
+		Expect(w.Code).To(Equal(http.StatusOK))
+		Expect(gotContainer).To(Equal("mp3"))
+	})
+
+	It("lowercases id/param segments (safe: Jellyfin ids are lowercase hex)", func() {
+		serve("/foo/DEADBEEF/bar")
+		Expect(gotID).To(Equal("deadbeef"))
+	})
+
+	It("normalizes the RoutePath branch when mounted under a parent", func() {
+		parent := chi.NewRouter()
+		parent.Mount("/jellyfin", handler)
+		w := httptest.NewRecorder()
+		parent.ServeHTTP(w, httptest.NewRequest("GET", "/jellyfin/FOO/abc/BAR", nil))
+		Expect(w.Code).To(Equal(http.StatusOK))
 	})
 })

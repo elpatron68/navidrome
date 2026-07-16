@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"slices"
 	"time"
 
@@ -186,6 +187,21 @@ func (r *playlistRepository) GetAll(options ...model.QueryOptions) (model.Playli
 	return playlists, err
 }
 
+func (r *playlistRepository) GetCursor(options ...model.QueryOptions) (model.PlaylistCursor, error) {
+	// Same userFilter as GetAll: a cursor must not widen visibility beyond public/owned playlists.
+	sel := r.selectPlaylist(options...).Where(r.userFilter())
+	cursor, err := queryWithStableResults[dbPlaylist](r.sqlRepository, sel)
+	if err != nil {
+		return nil, err
+	}
+	return wrapPlaylistCursor(cursor), nil
+}
+
+// dbPlaylist embeds a value, not a pointer, so its model is never nil.
+func wrapPlaylistCursor(cursor iter.Seq2[dbPlaylist, error]) model.PlaylistCursor {
+	return model.PlaylistCursor(wrapCursor(cursor, func(p dbPlaylist) *model.Playlist { return &p.Playlist }))
+}
+
 func (r *playlistRepository) GetPlaylists(mediaFileId string) (model.Playlists, error) {
 	sel := r.selectPlaylist(model.QueryOptions{Sort: "name"}).
 		Join("playlist_tracks on playlist.id = playlist_tracks.playlist_id").
@@ -282,10 +298,11 @@ func (r *playlistRepository) refreshCounters(pls *model.Playlist) error {
 	return nil
 }
 
-func (r *playlistRepository) loadTracks(sel SelectBuilder, id string) (model.PlaylistTracks, error) {
-	sel = r.applyLibraryFilter(sel, "f")
+// tracksQuery is shared by loadTracks and GetCursor, so both hydrate rows identically.
+func (r *playlistRepository) tracksQuery(query SelectBuilder, id string) SelectBuilder {
+	query = r.applyLibraryFilter(query, "f")
 	userID := loggedUser(r.ctx).ID
-	tracksQuery := sel.
+	return query.
 		Columns(
 			"coalesce(starred, 0) as starred",
 			"starred_at",
@@ -305,8 +322,11 @@ func (r *playlistRepository) loadTracks(sel SelectBuilder, id string) (model.Pla
 		Join("media_file f on f.id = media_file_id").
 		Join("library on f.library_id = library.id").
 		Where(Eq{"playlist_id": id})
+}
+
+func (r *playlistRepository) loadTracks(query SelectBuilder, id string) (model.PlaylistTracks, error) {
 	tracks := dbPlaylistTracks{}
-	err := r.queryAll(tracksQuery, &tracks)
+	err := r.queryAll(r.tracksQuery(query, id), &tracks)
 	if err != nil {
 		return nil, err
 	}

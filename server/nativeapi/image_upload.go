@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/core"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
@@ -162,7 +163,7 @@ func downloadImageFromURL(ctx context.Context, rawURL string) (io.Reader, string
 		return nil, "", err
 	}
 
-	maxSize := maxImageUploadSize()
+	maxSize := core.MaxImageUploadSize()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, "", err

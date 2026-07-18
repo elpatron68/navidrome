@@ -8,6 +8,7 @@ import (
 	"github.com/navidrome/navidrome/core/lyrics"
 	"github.com/navidrome/navidrome/core/matcher"
 	"github.com/navidrome/navidrome/core/metrics"
+	"github.com/navidrome/navidrome/core/mix"
 	"github.com/navidrome/navidrome/core/playback"
 	"github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/core/scrobbler"
@@ -29,6 +30,7 @@ var Set = wire.NewSet(
 	stream.NewTranscodeDecider,
 	agents.GetAgents,
 	external.NewProvider,
+	mix.New,
 	matcher.New,
 	wire.Bind(new(external.Agents), new(*agents.Agents)),
 	ffmpeg.New,

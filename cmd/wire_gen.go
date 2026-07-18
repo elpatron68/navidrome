@@ -19,6 +19,7 @@ import (
 	"github.com/navidrome/navidrome/core/lyrics"
 	"github.com/navidrome/navidrome/core/matcher"
 	"github.com/navidrome/navidrome/core/metrics"
+	"github.com/navidrome/navidrome/core/mix"
 	"github.com/navidrome/navidrome/core/playback"
 	"github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/core/scrobbler"
@@ -113,7 +114,8 @@ func CreateSubsonicAPIRouter(ctx context.Context) *subsonic.Router {
 	lyricsLyrics := lyrics.NewLyrics(dataStore, manager)
 	transcodeDecider := stream.NewTranscodeDecider(dataStore, fFmpeg)
 	sonicSonic := sonic.New(dataStore, manager, matcherMatcher)
-	router := subsonic.New(dataStore, artworkArtwork, mediaStreamer, archiver, players, provider, modelScanner, broker, playlistsPlaylists, playTracker, share, playbackServer, metricsMetrics, lyricsLyrics, transcodeDecider, sonicSonic)
+	mixer := mix.New(dataStore, provider)
+	router := subsonic.New(dataStore, artworkArtwork, mediaStreamer, archiver, players, provider, modelScanner, broker, playlistsPlaylists, playTracker, share, playbackServer, metricsMetrics, lyricsLyrics, transcodeDecider, sonicSonic, mixer)
 	return router
 }
 

@@ -118,6 +118,7 @@ type configOptions struct {
 	Deezer                          deezerOptions       `json:",omitzero"`
 	ListenBrainz                    listenBrainzOptions `json:",omitzero"`
 	Jellyfin                        jellyfinOptions     `json:",omitzero"`
+	PersonalMix                     personalMixOptions  `json:",omitzero"`
 	EnableScrobbleHistory           bool
 	Tags                            map[string]TagConf `json:",omitempty"`
 	Agents                          string
@@ -229,6 +230,24 @@ type jellyfinOptions struct {
 	// cursor — and its pooled connection — for the whole client-paced response, so without a bound
 	// enough slow clients would take the entire pool and stall the scanner, scrobbles and the UI.
 	MaxConcurrentStreams int
+}
+
+// personalMixOptions configures the "Personal Mix" feature: a habit-based, weighted-random
+// playlist generated from the logged-in user's play counts, recency, loved and rated tracks,
+// optionally blended with similar tracks from the configured metadata agents.
+type personalMixOptions struct {
+	// Enabled toggles the getPersonalMix endpoint. When false the endpoint returns an error.
+	Enabled bool
+	// Size is the default number of tracks returned when the client does not pass "size".
+	Size int
+	// DiscoveryRatio (0..1) is the target share of "exploration" (similar/new) tracks vs.
+	// "exploitation" (already-loved/played) tracks. 0 disables discovery.
+	DiscoveryRatio float64
+	// MaxPerArtist caps how many tracks by the same artist may appear in the mix (0 = no cap).
+	MaxPerArtist int
+	// RecencyHalfLife controls the exponential decay applied to the recency signal: a track played
+	// one half-life ago contributes half the recency weight. 0 disables the recency signal.
+	RecencyHalfLife time.Duration
 }
 
 type httpHeaderOptions struct {
@@ -847,6 +866,11 @@ func setViperDefaults() {
 	viper.SetDefault("subsonic.enableaveragerating", true)
 	viper.SetDefault("subsonic.legacyclients", "DSub")
 	viper.SetDefault("subsonic.minimalclients", "SubMusic")
+	viper.SetDefault("personalmix.enabled", true)
+	viper.SetDefault("personalmix.size", 50)
+	viper.SetDefault("personalmix.discoveryratio", 0.4)
+	viper.SetDefault("personalmix.maxperartist", 2)
+	viper.SetDefault("personalmix.recencyhalflife", 720*time.Hour)
 	viper.SetDefault("transcoding.maxconcurrent", 0)
 	viper.SetDefault("transcoding.maxconcurrentperuser", 0)
 	viper.SetDefault("transcoding.enablecancellation", false)

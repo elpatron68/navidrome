@@ -1,8 +1,18 @@
 # Umsetzungsplan: Persönlicher Mix (personalisiertes Radio)
 
-Status: Entwurf / Planung
+Status: Umgesetzt (Phase 0–3)
 Branch: `cursor/personalized-mix-2ac3`
 Bezug: Evaluation „Option B (Fork/Core)"
+
+## Umsetzungsstand
+
+- Phase 0–2: umgesetzt (Core-Service `core/mix`, Endpoint `getPersonalMix`, DI/Wire, Config,
+  UI-Button, habit-basierte Gewichtung, Exploration via `external.Provider.SimilarSongs`,
+  Diversität mit „relaxed fill", Cold-Start-/Random-Fallback).
+- Phase 3: Caching der Exploration pro Nutzer (`utils/cache.SimpleCache`, TTL 1 h, Singleflight),
+  deutsche Übersetzungen, Doku, Tests (`core/mix/mix_test.go`, `server/subsonic/mix_test.go`).
+- Offen/optional: Jellyfin- bzw. native-REST-Anbindung, weitergehendes Performance-Tuning und
+  konfigurierbare Score-Gewichte.
 
 ## 1. Ziel
 

@@ -3,5 +3,6 @@ node_modules
 
 build/*
 !build/.gitkeep
+dev-dist/
 /coverage/
 public/3rdparty/workbox

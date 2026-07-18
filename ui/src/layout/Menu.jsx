@@ -9,6 +9,7 @@ import SubMenu from './SubMenu'
 import { humanize, pluralize } from 'inflection'
 import albumLists from '../album/albumLists'
 import PlaylistsSubMenu from './PlaylistsSubMenu'
+import PersonalMixMenuItem from './PersonalMixMenuItem'
 import LibrarySelector from '../common/LibrarySelector'
 import config from '../config'
 
@@ -124,6 +125,7 @@ const Menu = ({ dense = false }) => {
         {Object.keys(albumLists).map((type) =>
           renderAlbumMenuItemLink(type, albumLists[type]),
         )}
+        <PersonalMixMenuItem sidebarIsOpen={open} dense={dense} />
       </SubMenu>
       {resources.filter(subItems(undefined)).map(renderResourceMenuItemLink)}
       {config.devSidebarPlaylists && open ? (

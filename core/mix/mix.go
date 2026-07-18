@@ -107,9 +107,22 @@ func (m *mixer) PersonalMix(ctx context.Context, opts Options) (model.MediaFiles
 		result = append(result, pickWeighted(explore, discoveryWeight, size-len(result), cfg.MaxPerArtist, chosen, artistCount)...)
 	}
 
-	// Last resort: top up with random tracks so the mix reaches the requested size.
+	// Top up with random tracks so the mix reaches the requested size.
+	var extra model.MediaFiles
 	if len(result) < size {
-		result = m.topUpRandom(ctx, base, size, result, chosen, artistCount, cfg.MaxPerArtist)
+		var err error
+		if extra, err = m.ds.MediaFile(ctx).GetRandom(model.QueryOptions{Filters: base, Max: size * 2}); err != nil {
+			log.Debug(ctx, "PersonalMix: random top-up failed", err)
+		}
+		result = fill(result, extra, chosen, artistCount, cfg.MaxPerArtist, size)
+	}
+
+	// Relaxed fill: if the per-artist cap starved the mix (e.g. small or single-artist libraries),
+	// ignore the cap so the mix still reaches the requested size when tracks are available.
+	if len(result) < size {
+		for _, pool := range []model.MediaFiles{exploit, explore, extra} {
+			result = fill(result, pool, chosen, artistCount, 0, size)
+		}
 	}
 
 	shuffle(result)
@@ -228,14 +241,11 @@ func (m *mixer) randomFallback(ctx context.Context, base squirrel.Sqlizer, size 
 	return m.ds.MediaFile(ctx).GetRandom(model.QueryOptions{Filters: base, Max: size})
 }
 
-func (m *mixer) topUpRandom(ctx context.Context, base squirrel.Sqlizer, size int, result model.MediaFiles,
-	chosen map[string]bool, artistCount map[string]int, maxPerArtist int) model.MediaFiles {
-	extra, err := m.ds.MediaFile(ctx).GetRandom(model.QueryOptions{Filters: base, Max: size * 2})
-	if err != nil {
-		log.Debug(ctx, "PersonalMix: random top-up failed", err)
-		return result
-	}
-	for _, mf := range extra {
+// fill appends tracks from pool to result (in order) until it reaches size, skipping already-chosen
+// tracks and respecting the per-artist cap (maxPerArtist <= 0 disables the cap).
+func fill(result, pool model.MediaFiles, chosen map[string]bool, artistCount map[string]int,
+	maxPerArtist, size int) model.MediaFiles {
+	for _, mf := range pool {
 		if len(result) >= size {
 			break
 		}

@@ -172,7 +172,34 @@ var _ = Describe("Mixer", func() {
 	})
 
 	Describe("per-artist diversity", func() {
-		It("never exceeds MaxPerArtist for the same artist", func() {
+		It("respects MaxPerArtist when enough diverse tracks are available", func() {
+			conf.Server.PersonalMix.MaxPerArtist = 2
+			now := time.Now()
+			var data model.MediaFiles
+			for i := 0; i < 5; i++ {
+				mf := track("same"+string(rune('0'+i)), "sameArtist")
+				mf.PlayCount = int64(i + 1)
+				mf.PlayDate = &now
+				data = append(data, mf)
+			}
+			// plenty of other artists so a full mix is possible without relaxing the cap
+			for i := 0; i < 8; i++ {
+				mf := track("other"+string(rune('0'+i)), "artist"+string(rune('0'+i)))
+				mf.Starred = true
+				data = append(data, mf)
+			}
+			repo.all = data
+			res, err := mixer.PersonalMix(ctx, mix.Options{Size: 6})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res).To(HaveLen(6))
+			perArtist := map[string]int{}
+			for _, mf := range res {
+				perArtist[mf.AlbumArtistID]++
+			}
+			Expect(perArtist["sameArtist"]).To(BeNumerically("<=", 2))
+		})
+
+		It("still fills the mix when only one artist is available (relaxed cap)", func() {
 			conf.Server.PersonalMix.MaxPerArtist = 2
 			now := time.Now()
 			var data model.MediaFiles
@@ -182,20 +209,10 @@ var _ = Describe("Mixer", func() {
 				mf.PlayDate = &now
 				data = append(data, mf)
 			}
-			// a couple of other artists so a full mix is possible
-			for i := 0; i < 5; i++ {
-				mf := track("other"+string(rune('0'+i)), "artist"+string(rune('0'+i)))
-				mf.Starred = true
-				data = append(data, mf)
-			}
 			repo.all = data
-			res, err := mixer.PersonalMix(ctx, mix.Options{Size: 12})
+			res, err := mixer.PersonalMix(ctx, mix.Options{Size: 8})
 			Expect(err).ToNot(HaveOccurred())
-			perArtist := map[string]int{}
-			for _, mf := range res {
-				perArtist[mf.AlbumArtistID]++
-			}
-			Expect(perArtist["sameArtist"]).To(BeNumerically("<=", 2))
+			Expect(res).To(HaveLen(8))
 		})
 	})
 

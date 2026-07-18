@@ -36,6 +36,28 @@ export const processSongsForPlayback = (songs) => {
   return { songData, ids }
 }
 
+export const playPersonalMix = async (dispatch, notify, options = {}) => {
+  const { size = 100 } = options
+
+  const res = await subsonic.getPersonalMix(size)
+  const data = res.json['subsonic-response']
+
+  if (data.status !== 'ok') {
+    throw new Error(
+      `Error fetching personal mix: ${data.error?.message || 'Unknown error'} (Code: ${data.error?.code || 'unknown'})`,
+    )
+  }
+
+  const songs = data.personalMix?.song || []
+  if (!songs.length) {
+    notify('message.noPersonalMixFound', 'warning')
+    return
+  }
+
+  const { songData, ids } = processSongsForPlayback(songs)
+  dispatch(playTracks(songData, ids))
+}
+
 export const playSimilar = async (dispatch, notify, id, options = {}) => {
   const { seedRecord = null, shuffle = false } = options
 

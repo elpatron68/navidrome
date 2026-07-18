@@ -129,6 +129,10 @@ const getTopSongs = (artist, count = 50) => {
   return httpClient(url('getTopSongs', null, { artist, count }))
 }
 
+const getPersonalMix = (size = 50) => {
+  return httpClient(url('getPersonalMix', null, { size }))
+}
+
 const streamUrl = (id, options) => {
   return baseUrl(
     url('stream', id, {
@@ -158,4 +162,5 @@ export default {
   getArtistInfo,
   getTopSongs,
   getSimilarSongs2,
+  getPersonalMix,
 }

@@ -3,12 +3,14 @@ package mix_test
 import (
 	"context"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/core/mix"
 	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/request"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -81,9 +83,11 @@ func (d *fakeDataStore) MediaFile(context.Context) model.MediaFileRepository { r
 type fakeProvider struct {
 	similar model.MediaFiles
 	err     error
+	calls   atomic.Int32
 }
 
 func (f *fakeProvider) SimilarSongs(context.Context, string, int) (model.MediaFiles, error) {
+	f.calls.Add(1)
 	return f.similar, f.err
 }
 func (f *fakeProvider) TopSongs(context.Context, string, int) (model.MediaFiles, error) {
@@ -231,6 +235,22 @@ var _ = Describe("Mixer", func() {
 			Expect(err).ToNot(HaveOccurred())
 			got := ids(res)
 			Expect(got).To(SatisfyAny(HaveKey("sim1"), HaveKey("sim2"), HaveKey("sim3")))
+		})
+	})
+
+	Describe("exploration caching", func() {
+		It("reuses the cached exploration pool for the same user within the TTL", func() {
+			conf.Server.PersonalMix.DiscoveryRatio = 1
+			ctx = request.WithUser(ctx, model.User{ID: "u1"})
+			repo.all = model.MediaFiles{track("seed", "art1")}
+			provider.similar = model.MediaFiles{track("sim1", "artX"), track("sim2", "artY")}
+
+			_, err := mixer.PersonalMix(ctx, mix.Options{Size: 5, SeedID: "seed"})
+			Expect(err).ToNot(HaveOccurred())
+			_, err = mixer.PersonalMix(ctx, mix.Options{Size: 5, SeedID: "seed"})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(provider.calls.Load()).To(Equal(int32(1)))
 		})
 	})
 

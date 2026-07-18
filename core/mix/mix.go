@@ -12,6 +12,7 @@ package mix
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 	"time"
@@ -21,16 +22,24 @@ import (
 	"github.com/navidrome/navidrome/core/external"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/request"
+	"github.com/navidrome/navidrome/utils/cache"
 	"github.com/navidrome/navidrome/utils/random"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	defaultSize    = 50
-	maxSize        = 500
-	maxSeeds       = 5                // number of seed tracks used to fetch similar songs
-	exploreTimeout = 10 * time.Second // bounds the (external) similar-songs fetch
+	defaultSize     = 50
+	maxSize         = 500
+	maxSeeds        = 5                // number of seed tracks used to fetch similar songs
+	exploreTimeout  = 10 * time.Second // bounds the (external) similar-songs fetch
+	exploreCacheTTL = 1 * time.Hour    // how long a user's exploration pool is cached
+	exploreCacheMax = 1000             // max cached exploration pools (bounds memory)
 )
+
+// errEmptyExplore prevents caching an empty exploration pool, so a transient external failure
+// doesn't disable discovery for the whole TTL.
+var errEmptyExplore = errors.New("empty exploration pool")
 
 // Options controls a single Personal Mix request. The user is taken from the request context, so
 // annotations (play count, rating, ...) are automatically scoped to the logged-in user.
@@ -49,12 +58,23 @@ type Mixer interface {
 }
 
 func New(ds model.DataStore, provider external.Provider) Mixer {
-	return &mixer{ds: ds, provider: provider}
+	return &mixer{
+		ds:       ds,
+		provider: provider,
+		exploreCache: cache.NewSimpleCache[string, model.MediaFiles](cache.Options{
+			SizeLimit:  exploreCacheMax,
+			DefaultTTL: exploreCacheTTL,
+		}),
+	}
 }
 
 type mixer struct {
 	ds       model.DataStore
 	provider external.Provider
+	// exploreCache caches the (expensive, often external) similar-songs pool per user, so repeated
+	// mixes reuse it within the TTL. The final weighted selection still re-runs each request, so
+	// mixes keep varying.
+	exploreCache cache.SimpleCache[string, model.MediaFiles]
 }
 
 func (m *mixer) PersonalMix(ctx context.Context, opts Options) (model.MediaFiles, error) {
@@ -186,9 +206,10 @@ func (m *mixer) habitCandidates(ctx context.Context, base squirrel.Sqlizer, size
 	return out, nil
 }
 
-// exploreCandidates fetches similar tracks for a small set of seeds. Seeds are either the explicit
-// SeedID or a sample of the user's habit tracks. Provider errors (e.g. no external agents
-// configured) degrade to an empty exploration pool rather than failing the whole mix.
+// exploreCandidates returns similar tracks for a small set of seeds. Seeds are either the explicit
+// SeedID or a sample of the user's habit tracks. The (often external) fetch is cached per user for
+// exploreCacheTTL to avoid hammering the metadata agents on every request. Provider errors (e.g. no
+// external agents configured) degrade to an empty exploration pool rather than failing the mix.
 func (m *mixer) exploreCandidates(ctx context.Context, opts Options, exploit model.MediaFiles, size int) model.MediaFiles {
 	if conf.Server.PersonalMix.DiscoveryRatio <= 0 && opts.SeedID == "" {
 		return nil
@@ -206,6 +227,31 @@ func (m *mixer) exploreCandidates(ctx context.Context, opts Options, exploit mod
 		return nil
 	}
 
+	// Cache the exploration pool per user (keyed also by explicit seed) to reuse across requests.
+	if user, ok := request.UserFrom(ctx); ok {
+		key := "habits:" + user.ID
+		if opts.SeedID != "" {
+			key = "seed:" + user.ID + ":" + opts.SeedID
+		}
+		songs, err := m.exploreCache.GetWithLoader(key, func(string) (model.MediaFiles, time.Duration, error) {
+			res := m.fetchSimilar(ctx, seeds, size)
+			if len(res) == 0 {
+				return nil, 0, errEmptyExplore
+			}
+			return res, exploreCacheTTL, nil
+		})
+		if err != nil {
+			return nil
+		}
+		return songs
+	}
+
+	return m.fetchSimilar(ctx, seeds, size)
+}
+
+// fetchSimilar concurrently fetches similar songs for the given seeds and returns the de-duplicated
+// union, bounded by exploreTimeout.
+func (m *mixer) fetchSimilar(ctx context.Context, seeds []string, size int) model.MediaFiles {
 	perSeed := max(size/len(seeds)+1, 10)
 	ctx, cancel := context.WithTimeout(ctx, exploreTimeout)
 	defer cancel()

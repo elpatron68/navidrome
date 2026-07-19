@@ -15,6 +15,7 @@ var _ = Describe("mappers", func() {
 			ID: "song-1", Title: "Song", Album: "Alb", AlbumID: "alb-1",
 			Artist: "Art", AlbumArtist: "AA", TrackNumber: 3, DiscNumber: 1,
 			Year: 1999, Duration: 60, Size: 2_500_000,
+			Genres: []model.Genre{{ID: "1", Name: "genre 1"}, {ID: "2", Name: "genre 2"}},
 		}
 		mf.PlayCount = 2
 		mf.Starred = true
@@ -35,6 +36,8 @@ var _ = Describe("mappers", func() {
 		Expect(item.UserData.ItemId).To(Equal(EncodeID("song-1")))
 		Expect(item.ImageBlurHashes["Primary"]).To(HaveKey(item.AlbumPrimaryImageTag))
 		Expect(item.ImageBlurHashes["Primary"][item.AlbumPrimaryImageTag]).To(HaveLen(6))
+		Expect(item.Genres).To(Equal([]string{"genre 1", "genre 2"}))
+		Expect(item.GenreItems).To(Equal([]NameGuidPair{{Id: EncodeID("1"), Name: "genre 1"}, {Id: EncodeID("2"), Name: "genre 2"}}))
 	})
 
 	Describe("Fields gating (matches real Jellyfin)", func() {
@@ -94,6 +97,48 @@ var _ = Describe("mappers", func() {
 
 	It("omits ArtistItems when the track has no artist id", func() {
 		Expect(SongToBaseItem(model.MediaFile{ID: "s1", Title: "Song", Artist: "X"}, nil).ArtistItems).To(BeNil())
+	})
+
+	It("omits Artists when the track has no artist name or participants", func() {
+		Expect(SongToBaseItem(model.MediaFile{ID: "s1", Title: "Song"}, nil).Artists).To(BeNil())
+	})
+
+	It("splits Artists and ArtistItems per track artist from Participants", func() {
+		mf := model.MediaFile{
+			ID: "s1", Title: "Oooh",
+			Artist: "De La Soul feat. Redman", ArtistID: "ar-delasoul",
+			AlbumArtist: "De La Soul", AlbumArtistID: "ar-delasoul",
+		}
+		mf.Participants = model.Participants{
+			model.RoleArtist: model.ParticipantList{
+				{Artist: model.Artist{ID: "ar-delasoul", Name: "De La Soul"}},
+				{Artist: model.Artist{ID: "ar-redman", Name: "Redman"}},
+			},
+		}
+		item := SongToBaseItem(mf, nil)
+		Expect(item.Artists).To(Equal([]string{"De La Soul", "Redman"}))
+		Expect(item.ArtistItems).To(Equal([]NameGuidPair{
+			{Name: "De La Soul", Id: EncodeID("ar-delasoul")},
+			{Name: "Redman", Id: EncodeID("ar-redman")},
+		}))
+		// AlbumArtists stays single, matching real Jellyfin.
+		Expect(item.AlbumArtists).To(Equal([]NameGuidPair{{Name: "De La Soul", Id: EncodeID("ar-delasoul")}}))
+	})
+
+	It("serializes normalization gains with Jellyfin's exact key casing", func() {
+		mf := model.MediaFile{ID: "s1", Title: "Song",
+			RGTrackGain: new(-3.5), RGAlbumGain: new(-4.25)}
+		b, err := json.Marshal(SongToBaseItem(mf, nil))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(b)).To(ContainSubstring(`"NormalizationGain":-3.5`))
+		Expect(string(b)).To(ContainSubstring(`"AlbumNormalizationGain":-4.25`))
+	})
+
+	It("omits normalization gains when the file has no ReplayGain tags", func() {
+		b, err := json.Marshal(SongToBaseItem(model.MediaFile{ID: "s1", Title: "Song"}, nil))
+		Expect(err).ToNot(HaveOccurred())
+		// Substring check covers both keys (AlbumNormalizationGain contains NormalizationGain).
+		Expect(string(b)).ToNot(ContainSubstring("NormalizationGain"))
 	})
 
 	It("builds a MediaSourceInfo from a media file", func() {
@@ -198,7 +243,7 @@ var _ = Describe("mappers", func() {
 	})
 
 	It("maps an album to a MusicAlbum folder item", func() {
-		al := model.Album{ID: "alb-1", Name: "Alb", AlbumArtist: "AA", AlbumArtistID: "art-1", MaxYear: 1999, SongCount: 10}
+		al := model.Album{ID: "alb-1", Name: "Alb", AlbumArtist: "AA", AlbumArtistID: "art-1", MaxYear: 1999, SongCount: 10, Genres: []model.Genre{{ID: "1", Name: "genre 1"}, {ID: "2", Name: "genre 2"}}}
 		item := AlbumToBaseItem(al)
 		Expect(item.Type).To(Equal("MusicAlbum"))
 		Expect(item.IsFolder).To(BeTrue())
@@ -211,6 +256,23 @@ var _ = Describe("mappers", func() {
 		Expect(*item.ChildCount).To(Equal(10))
 		Expect(item.ImageBlurHashes["Primary"]).To(HaveKey(item.ImageTags["Primary"]))
 		Expect(item.ImageBlurHashes["Primary"][item.ImageTags["Primary"]]).To(HaveLen(6))
+		Expect(item.Genres).To(Equal([]string{"genre 1", "genre 2"}))
+		Expect(item.GenreItems).To(Equal([]NameGuidPair{{Id: EncodeID("1"), Name: "genre 1"}, {Id: EncodeID("2"), Name: "genre 2"}}))
+	})
+
+	It("sets NormalizationGain on the album from its ReplayGain", func() {
+		al := model.Album{ID: "al1", Name: "Album", RGAlbumGain: new(-6.0)}
+		b, err := json.Marshal(AlbumToBaseItem(al))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(b)).To(ContainSubstring(`"NormalizationGain":-6`))
+		// Real Jellyfin never sets AlbumNormalizationGain on an album item.
+		Expect(string(b)).ToNot(ContainSubstring("AlbumNormalizationGain"))
+	})
+
+	It("omits NormalizationGain when the album has no ReplayGain", func() {
+		b, err := json.Marshal(AlbumToBaseItem(model.Album{ID: "al1", Name: "Album"}))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(b)).ToNot(ContainSubstring("NormalizationGain"))
 	})
 
 	It("maps an artist to a MusicArtist folder item", func() {

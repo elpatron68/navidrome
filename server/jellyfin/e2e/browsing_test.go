@@ -62,6 +62,16 @@ var _ = Describe("Browsing", func() {
 			}
 		})
 
+		// Clients (Finamp, Feishin) send Fields as repeated params rather than one comma-separated
+		// value; real Jellyfin accepts both, so a later Fields=MediaSources must still take effect.
+		It("honors MediaSources when Fields is sent as repeated params", func() {
+			q := queryResult(get("/Items?IncludeItemTypes=Audio&Recursive=true&Fields=Genres&Fields=MediaSources"))
+			Expect(q.Items).ToNot(BeEmpty())
+			for _, it := range q.Items {
+				Expect(it.MediaSources).To(HaveLen(1))
+			}
+		})
+
 		It("lists all album artists", func() {
 			q := queryResult(get("/Items?IncludeItemTypes=MusicArtist&Recursive=true"))
 			Expect(q.TotalRecordCount).To(Equal(4))
@@ -403,6 +413,22 @@ var _ = Describe("Browsing", func() {
 			Expect(item.ArtistItems[0].Id).ToNot(BeEmpty())
 			Expect(item.AlbumArtists).ToNot(BeEmpty())
 			Expect(item.AlbumArtists[0].Name).To(Equal("Miles Davis"))
+		})
+
+		It("exposes NormalizationGain and AlbumNormalizationGain from ReplayGain tags", func() {
+			var item dto.BaseItemDto
+			parseInto(get("/Items/"+enc(songID("Stairway To Heaven"))), &item)
+			Expect(item.NormalizationGain).ToNot(BeNil())
+			Expect(*item.NormalizationGain).To(BeNumerically("~", -3.5, 0.001))
+			Expect(item.AlbumNormalizationGain).ToNot(BeNil())
+			Expect(*item.AlbumNormalizationGain).To(BeNumerically("~", -4.25, 0.001))
+		})
+
+		It("omits normalization gains for files without ReplayGain tags", func() {
+			var item dto.BaseItemDto
+			parseInto(get("/Items/"+enc(songID("So What"))), &item)
+			Expect(item.NormalizationGain).To(BeNil())
+			Expect(item.AlbumNormalizationGain).To(BeNil())
 		})
 
 		It("resolves an artist", func() {

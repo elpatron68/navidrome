@@ -230,7 +230,7 @@ type itemsQuery struct {
 func (api *Router) parseItemsQuery(ctx context.Context, r *http.Request) itemsQuery {
 	p := req.Params(r)
 	q := itemsQuery{
-		fields:    dto.ParseFields(p.StringOr("fields", "")),
+		fields:    dto.ParseFields(p.Strings("fields")...),
 		ids:       decodedQueryIDs(r, "ids"),
 		rawTypes:  p.StringOr("includeitemtypes", ""),
 		search:    searchTerm(p),
@@ -730,7 +730,7 @@ func (api *Router) itemsByIDs(ctx context.Context, ids []string, fields dto.Fiel
 
 func (api *Router) getItem(w http.ResponseWriter, r *http.Request) {
 	id := api.resolveItemID(r.Context(), dto.DecodeID(chi.URLParam(r, "itemId")))
-	fields := dto.ParseFields(req.Params(r).StringOr("fields", ""))
+	fields := dto.ParseFields(req.Params(r).Strings("fields")...)
 	if item, ok := api.resolveItemByID(r.Context(), id, fields); ok {
 		api.ok(w, r, item)
 		return

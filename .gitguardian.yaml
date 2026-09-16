@@ -1,0 +1,21 @@
+version: 2
+
+# GitGuardian / ggshield configuration.
+#
+# The entries below silence known FALSE POSITIVES. Both values are well-known,
+# published RFC 4122 UUIDs used only as throwaway test fixtures for the Jellyfin
+# "server ID" property in server/jellyfin/system_test.go. They are NOT credentials:
+#   - 6ba7b810-9dad-11d1-80b4-00c04fd430c8  -> RFC 4122 App. C "DNS" namespace UUID
+#   - 1b4e28ba-2fa1-11d2-883f-0016d3cca427  -> common RFC 4122 example UUID
+# GitGuardian's generic-api-key / high-entropy detector matches their 32-hex
+# (dash-stripped) form. They were introduced upstream (navidrome/navidrome).
+#
+# NOTE: local ignores in this file are honored by ggshield (CI / pre-commit /
+# PR checks) but are NOT shared with the GitGuardian dashboard. The matching
+# dashboard incident must additionally be marked as a false positive in the UI.
+secret:
+  ignored_matches:
+    - name: "Jellyfin serverID test fixture: RFC 4122 DNS namespace UUID (system_test.go)"
+      match: 6ba7b8109dad11d180b400c04fd430c8
+    - name: "Jellyfin serverID test fixture: RFC 4122 example UUID (system_test.go)"
+      match: 1b4e28ba2fa111d2883f0016d3cca427

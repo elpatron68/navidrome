@@ -88,6 +88,7 @@ func APIHosts() []string {
 
 func shuffleHosts(hosts []string) []string {
 	out := append([]string(nil), hosts...)
+	//nolint:gosec // G404: non-cryptographic shuffle only load-balances Radio Browser mirrors
 	rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
 	return out
 }

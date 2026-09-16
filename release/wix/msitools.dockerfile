@@ -1,3 +1,3 @@
-FROM alpine:3.20
+FROM alpine
 RUN apk update && apk add jq msitools
 WORKDIR /workspace

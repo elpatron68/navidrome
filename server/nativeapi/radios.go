@@ -55,7 +55,11 @@ func (api *Router) saveRadioImageFromReader(ctx context.Context, radio *model.Ra
 		return err
 	}
 	radio.UploadedImage = filename
-	return api.ds.Radio(ctx).Put(radio, "UploadedImage")
+	if err := api.ds.Radio(ctx).Put(radio, "UploadedImage"); err != nil {
+		return err
+	}
+	api.imgUpload.EnqueueArtwork(ctx, consts.EntityRadio, radio.ID)
+	return nil
 }
 
 type radioCreateRequest struct {
@@ -158,7 +162,11 @@ func (api *Router) deleteRadioImage() http.HandlerFunc {
 			return err
 		}
 		radio.UploadedImage = ""
-		return api.ds.Radio(ctx).Put(radio, "UploadedImage")
+		if err := api.ds.Radio(ctx).Put(radio, "UploadedImage"); err != nil {
+			return err
+		}
+		api.imgUpload.EnqueueArtwork(ctx, consts.EntityRadio, radio.ID)
+		return nil
 	})
 }
 

@@ -20,6 +20,12 @@ type SystemInfo struct {
 	CachePath              string `json:"CachePath,omitempty"`
 }
 
+// EndPointInfo describes the caller's network location (GET /System/Endpoint).
+type EndPointInfo struct {
+	IsLocal     bool `json:"IsLocal"`
+	IsInNetwork bool `json:"IsInNetwork"`
+}
+
 type NameGuidPair struct {
 	Name string `json:"Name"`
 	Id   string `json:"Id"`
@@ -71,6 +77,7 @@ type BaseItemDto struct {
 	ArtistItems            []NameGuidPair    `json:"ArtistItems,omitempty"`
 	Genres                 []string          `json:"Genres,omitempty"`
 	GenreItems             []NameGuidPair    `json:"GenreItems,omitempty"`
+	Studios                []NameGuidPair    `json:"Studios,omitempty"`
 	NormalizationGain      *float64          `json:"NormalizationGain,omitempty"`
 	AlbumNormalizationGain *float64          `json:"AlbumNormalizationGain,omitempty"`
 	ChildCount             *int              `json:"ChildCount,omitempty"`
@@ -80,12 +87,15 @@ type BaseItemDto struct {
 	// ImageBlurHashes is keyed by image type (e.g. "Primary") then image tag. Finamp uses it as a
 	// de-dup key for image downloads (and a placeholder); absent, it warns the server isn't
 	// calculating blurhashes.
-	ImageBlurHashes   map[string]map[string]string `json:"ImageBlurHashes,omitempty"`
-	BackdropImageTags []string                     `json:"BackdropImageTags"`
-	UserData          *UserItemDataDto             `json:"UserData,omitempty"`
-	MediaSources      []MediaSourceInfo            `json:"MediaSources,omitempty"`
-	Container         string                       `json:"Container,omitempty"`
-	CanDownload       bool                         `json:"CanDownload"`
+	ImageBlurHashes map[string]map[string]string `json:"ImageBlurHashes,omitempty"`
+	// PrimaryImageAspectRatio is width/height of the Primary image, attached only when the request's
+	// Fields asks for it; omitted rather than guessed, since a wrong ratio mis-shapes a placeholder.
+	PrimaryImageAspectRatio *float64          `json:"PrimaryImageAspectRatio,omitempty"`
+	BackdropImageTags       []string          `json:"BackdropImageTags"`
+	UserData                *UserItemDataDto  `json:"UserData,omitempty"`
+	MediaSources            []MediaSourceInfo `json:"MediaSources,omitempty"`
+	Container               string            `json:"Container,omitempty"`
+	CanDownload             bool              `json:"CanDownload"`
 }
 
 // PlaylistUserPermissions is the response shape for GET /Playlists/{id}/Users(/{userId}), which
@@ -287,4 +297,13 @@ type LyricLineCue struct {
 	EndPosition int    `json:"EndPosition"`
 	Start       int64  `json:"Start"`
 	End         *int64 `json:"End,omitempty"`
+}
+
+// QueryFiltersLegacy is the response for GET /Items/Filters. All four lists are always present;
+// clients (jellyfin-web) render each unconditionally.
+type QueryFiltersLegacy struct {
+	Genres          []string `json:"Genres"`
+	Tags            []string `json:"Tags"`
+	OfficialRatings []string `json:"OfficialRatings"`
+	Years           []int    `json:"Years"`
 }

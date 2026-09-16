@@ -8,6 +8,7 @@ import (
 
 	. "github.com/Masterminds/squirrel"
 	"github.com/deluan/rest"
+	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/id"
 	"github.com/pocketbase/dbx"
@@ -37,6 +38,11 @@ func (r *radioRepository) CountAll(options ...model.QueryOptions) (int64, error)
 	return r.count(sql, options...)
 }
 
+// Exists needs no library or ownership filter: radios are visible to every user.
+func (r *radioRepository) Exists(id string) (bool, error) {
+	return r.exists(Eq{"id": id})
+}
+
 func (r *radioRepository) Delete(id string) error {
 	if !r.isPermitted() {
 		return rest.ErrPermissionDenied
@@ -49,14 +55,29 @@ func (r *radioRepository) Get(id string) (*model.Radio, error) {
 	sel := r.newSelect().Where(Eq{"id": id}).Columns("*")
 	res := model.Radio{}
 	err := r.queryOne(sel, &res)
-	return &res, err
+	if err != nil {
+		return &res, err
+	}
+	list := model.Radios{res}
+	r.hydrateArtwork(list)
+	return &list[0], nil
 }
 
 func (r *radioRepository) GetAll(options ...model.QueryOptions) (model.Radios, error) {
 	sel := r.newSelect(options...).Columns("*")
 	res := model.Radios{}
 	err := r.queryAll(sel, &res)
-	return res, err
+	if err != nil {
+		return res, err
+	}
+	r.hydrateArtwork(res)
+	return res, nil
+}
+
+// hydrateArtwork fills each radio's ImageHash/ImageAbsent from one batched item_artwork lookup.
+func (r *radioRepository) hydrateArtwork(radios model.Radios) {
+	hydrateItems(r.ctx, r.db, model.KindRadioArtwork, radios,
+		func(rd *model.Radio) (string, *model.ItemImage) { return rd.ID, &rd.ItemImage })
 }
 
 func (r *radioRepository) Put(radio *model.Radio, colsToUpdate ...string) error {
@@ -73,7 +94,17 @@ func (r *radioRepository) Put(radio *model.Radio, colsToUpdate ...string) error 
 		colsToUpdate = append(colsToUpdate, "UpdatedAt")
 	}
 	_, err := r.put(radio.ID, radio, colsToUpdate...)
-	return mapRadioError(err)
+	if err != nil {
+		return mapRadioError(err)
+	}
+	// Enqueue artwork resolution for the created/updated radio at Bump priority so a new
+	// radio's cover resolves proactively. Never fails the save.
+	item := model.ArtworkQueueItem{ItemKind: model.KindRadioArtwork.Prefix(), ItemID: radio.ID, ImageType: model.ImageTypePrimary,
+		Priority: model.ArtworkPriorityBump}
+	if err := NewArtworkQueueRepository(r.ctx, r.db).Enqueue(item); err != nil {
+		log.Warn(r.ctx, "could not enqueue radio artwork", "id", radio.ID, err)
+	}
+	return nil
 }
 
 func (r *radioRepository) Count(options ...rest.QueryOptions) (int64, error) {
@@ -111,7 +142,7 @@ func (r *radioRepository) Update(id string, entity any, cols ...string) error {
 	if !r.isPermitted() {
 		return rest.ErrPermissionDenied
 	}
-	err := r.Put(t)
+	err := r.Put(t, cols...)
 	return mapRadioError(err)
 }
 

@@ -20,7 +20,7 @@ import (
 
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
-	"github.com/navidrome/navidrome/core"
+	"github.com/navidrome/navidrome/core/artwork"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -37,7 +37,7 @@ func checkImageUploadPermission(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func handleImageUpload(saveFn func(ctx context.Context, reader io.Reader, ext string) error) http.HandlerFunc {
-	maxImageSize := core.MaxImageUploadSize()
+	maxImageSize := artwork.MaxImageUploadSize()
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		if !checkImageUploadPermission(w, r) {
@@ -163,7 +163,7 @@ func downloadImageFromURL(ctx context.Context, rawURL string) (io.Reader, string
 		return nil, "", err
 	}
 
-	maxSize := core.MaxImageUploadSize()
+	maxSize := artwork.MaxImageUploadSize()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, "", err

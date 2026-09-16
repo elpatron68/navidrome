@@ -90,7 +90,7 @@ func (f *fakeProvider) SimilarSongs(context.Context, string, int) (model.MediaFi
 	f.calls.Add(1)
 	return f.similar, f.err
 }
-func (f *fakeProvider) TopSongs(context.Context, string, int) (model.MediaFiles, error) {
+func (f *fakeProvider) TopSongs(context.Context, string, string, int) (model.MediaFiles, error) {
 	return nil, nil
 }
 func (f *fakeProvider) UpdateAlbumInfo(context.Context, string) (*model.Album, error) {
@@ -101,6 +101,7 @@ func (f *fakeProvider) UpdateArtistInfo(context.Context, string, int, bool) (*mo
 }
 func (f *fakeProvider) ArtistImage(context.Context, string) (*url.URL, error) { return nil, nil }
 func (f *fakeProvider) AlbumImage(context.Context, string) (*url.URL, error)  { return nil, nil }
+func (f *fakeProvider) RefreshInfo(context.Context, model.Kind, string) error { return nil }
 
 func track(id, artistID string) model.MediaFile {
 	return model.MediaFile{ID: id, Title: id, ArtistID: artistID, AlbumArtistID: artistID, Artist: artistID}
